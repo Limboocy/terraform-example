@@ -1,0 +1,46 @@
+# Runs plan on every PR, apply only on main after manual approval.
+# Environment is inferred from which environments/<env> path changed.
+
+trigger:
+  branches:
+    include: [main]
+
+pr:
+  branches:
+    include: [main]
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  terraformVersion: 1.7.5
+
+stages:
+  - stage: Plan
+    jobs:
+      - job: terraform_plan
+        steps:
+          - task: TerraformInstaller@1
+            inputs:
+              terraformVersion: $(terraformVersion)
+          - script: |
+              cd environments/$(ENV)
+              terraform init
+              terraform plan -out=tfplan
+            displayName: "terraform plan ($(ENV))"
+
+  - stage: Apply
+    dependsOn: Plan
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: terraform_apply
+        environment: $(ENV) # gates on Azure DevOps environment approval
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - script: |
+                    cd environments/$(ENV)
+                    terraform init
+                    terraform apply -auto-approve tfplan
+                  displayName: "terraform apply ($(ENV))"

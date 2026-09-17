@@ -1,0 +1,2 @@
+project  = "myapp"
+location = "eastus"
