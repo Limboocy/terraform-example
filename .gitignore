@@ -1,0 +1,28 @@
+# Terraform provider binaries — downloaded on demand, never commit
+**/.terraform/*
+
+# State files — live in Azure Storage, never commit
+*.tfstate
+*.tfstate.*
+
+# Plan artifacts
+tfplan
+*.tfplan
+plan.json
+plan.txt
+
+# Secret-bearing files
+*.auto.tfvars.json
+*.secret.tfvars
+.env
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Node modules (docx skill)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db

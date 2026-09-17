@@ -1,0 +1,118 @@
+# End-to-end Terraform delivery pipeline.
+#
+# Fixes the classic broken-handoff bug: the plan is produced ONCE, published as
+# a build artifact, and the exact same plan file is downloaded and applied — so
+# apply can never silently diverge from what was reviewed/approved.
+#
+# Flow:
+#   Validate  -> fmt, validate, tflint, tfsec, checkov, infracost   (every PR)
+#   Plan      -> terraform plan -out=tfplan, publish artifact         (every PR + main)
+#   Apply_*   -> download artifact, apply, gated on ADO Environment approval (main only)
+#
+# Auth: uses a workload-identity-federation service connection (no stored
+# secrets). ARM_USE_OIDC is set so Terraform's azurerm backend authenticates
+# via the pipeline's federated token.
+
+trigger:
+  branches:
+    include: [main]
+  paths:
+    include:
+      - environments/*
+      - modules/*
+
+pr:
+  branches:
+    include: [main]
+
+pool:
+  vmImage: ubuntu-latest
+
+parameters:
+  - name: environment
+    displayName: Target environment
+    type: string
+    default: dev
+    values: [dev, staging, prod]
+
+variables:
+  - group: terraform-platform            # DD_API_KEY, DD_APP_KEY, ARM_* (variable group)
+  - name: terraformVersion
+    value: 1.7.5
+  - name: workingDir
+    value: environments/${{ parameters.environment }}
+  - name: serviceConnection
+    value: azure-platform-oidc
+
+stages:
+  - stage: Validate
+    displayName: "Validate & scan"
+    jobs:
+      - job: static_checks
+        steps:
+          - template: templates/tools.yml
+            parameters:
+              terraformVersion: $(terraformVersion)
+
+          - script: terraform fmt -check -recursive
+            displayName: "terraform fmt -check"
+            workingDirectory: $(Build.SourcesDirectory)
+
+          - script: |
+              terraform init -backend=false
+              terraform validate
+            displayName: "terraform validate"
+            workingDirectory: $(workingDir)
+
+          - script: tflint --recursive
+            displayName: "tflint"
+            workingDirectory: $(Build.SourcesDirectory)
+
+          - script: tfsec . --minimum-severity HIGH
+            displayName: "tfsec (security)"
+            workingDirectory: $(Build.SourcesDirectory)
+
+          - script: checkov -d . --config-file .checkov.yaml
+            displayName: "checkov (compliance)"
+            workingDirectory: $(Build.SourcesDirectory)
+
+  - stage: Plan
+    displayName: "Plan"
+    dependsOn: Validate
+    jobs:
+      - job: terraform_plan
+        steps:
+          - template: templates/tools.yml
+            parameters:
+              terraformVersion: $(terraformVersion)
+
+          - template: templates/plan.yml
+            parameters:
+              workingDir: $(workingDir)
+              serviceConnection: $(serviceConnection)
+              environment: ${{ parameters.environment }}
+
+          # Cost delta on the plan — surfaces spend impact on every change.
+          - script: |
+              infracost breakdown --path $(workingDir) \
+                --format json --out-file infracost.json
+              infracost output --path infracost.json --format table
+            displayName: "infracost (cost impact)"
+
+  - stage: Apply
+    displayName: "Apply (${{ parameters.environment }})"
+    dependsOn: Plan
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - deployment: terraform_apply
+        # ADO Environment provides the manual approval gate + audit trail.
+        environment: aksplatform-${{ parameters.environment }}
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - template: templates/apply.yml
+                  parameters:
+                    workingDir: $(workingDir)
+                    serviceConnection: $(serviceConnection)
+                    environment: ${{ parameters.environment }}

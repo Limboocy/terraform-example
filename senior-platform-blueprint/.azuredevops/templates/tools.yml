@@ -1,0 +1,20 @@
+# Reusable step template: installs the toolchain used across stages. Keeping it
+# in one place means a version bump happens once, not in five copy-pasted spots.
+parameters:
+  - name: terraformVersion
+    type: string
+
+steps:
+  - task: TerraformInstaller@1
+    displayName: "Install Terraform ${{ parameters.terraformVersion }}"
+    inputs:
+      terraformVersion: ${{ parameters.terraformVersion }}
+
+  - script: |
+      set -euo pipefail
+      curl -sSL https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+      curl -sSL https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash -s -- -b /usr/local/bin
+      pip install --quiet checkov
+      curl -sSL https://raw.githubusercontent.com/infracost/infracost/master/scripts/install.sh | sh
+      tflint --init
+    displayName: "Install tflint / tfsec / checkov / infracost"

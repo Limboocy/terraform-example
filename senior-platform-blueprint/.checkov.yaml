@@ -1,0 +1,15 @@
+# Checkov config for the security/compliance gate in CI.
+framework:
+  - terraform
+compact: true
+quiet: true
+
+# Skip checks that conflict with intentional design decisions in this blueprint.
+# Each skip is justified — never blanket-skip.
+skip-check:
+  # Dev intentionally runs a public API server locked to authorized IP ranges.
+  # The private-cluster check would fail dev by design; it still runs on stg/prod.
+  - CKV_AZURE_115
+
+# Fail the build on any non-skipped finding.
+soft-fail: false

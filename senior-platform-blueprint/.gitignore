@@ -1,0 +1,24 @@
+# Terraform state — never commit; lives in the remote azurerm backend.
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl.tmp
+
+# Plan artifacts
+tfplan
+*.tfplan
+plan.json
+
+# Secret-bearing var files. Non-secret terraform.tfvars IS committed; anything
+# matching *.auto.tfvars.json or *.secret.tfvars is not.
+*.auto.tfvars.json
+*.secret.tfvars
+.env
+
+# Crash logs
+crash.log
+crash.*.log
+
+# Editor
+.idea/
+*.iml

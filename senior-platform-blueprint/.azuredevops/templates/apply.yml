@@ -1,0 +1,29 @@
+# Reusable step template: download the reviewed plan artifact and apply THAT
+# file. No -auto-approve flag games — applying a saved plan is non-interactive
+# by definition, and applying the reviewed artifact is what makes the approval
+# gate meaningful.
+parameters:
+  - name: workingDir
+    type: string
+  - name: serviceConnection
+    type: string
+  - name: environment
+    type: string
+
+steps:
+  - download: current
+    artifact: "tfplan-${{ parameters.environment }}"
+
+  - task: AzureCLI@2
+    displayName: "terraform apply (reviewed plan)"
+    inputs:
+      azureSubscription: ${{ parameters.serviceConnection }}
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        set -euo pipefail
+        export ARM_USE_OIDC=true
+        cd "${{ parameters.workingDir }}"
+        terraform init
+        cp "$(Pipeline.Workspace)/tfplan-${{ parameters.environment }}/tfplan" ./tfplan
+        terraform apply -input=false tfplan
